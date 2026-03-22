@@ -4,6 +4,7 @@ from fastapi.responses import StreamingResponse
 from contextlib import asynccontextmanager
 from collections import defaultdict
 import os, io, time, json, hashlib
+import httpx
 import hmac as hmac_lib
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -24,13 +25,13 @@ from database import get_db
 IS_POSTGRES = DATABASE_URL.startswith("postgresql")
 
 def lock_row(query):
-   return query.with_for_update() if IS_POSTGRES else query
+    return query.with_for_update() if IS_POSTGRES else query
 
 # ─── Brute-force protection ───────────────────────────────────────────────────
 _failed: dict = defaultdict(list)
-MAX_ATTEMPTS = 3
+MAX_ATTEMPTS = 5
 WINDOW   = 300   # 5 min
-LOCKOUT  = 600   # 10 min 
+LOCKOUT  = 600   # 10 min
 
 def check_brute_force(ip: str):
     now = time.time()
@@ -376,6 +377,33 @@ def export_libro_diario(date_from: Optional[str] = None, date_to: Optional[str] 
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={fname}"},
     )
+
+# ─── Public: Market Prices ────────────────────────────────────────────────────
+@app.get("/api/market/prices")
+async def get_market_prices():
+    """
+    Consulta precio del oro desde Binance (XAUUSDT) y dólar desde bluelytics.
+    Se hace desde el backend para evitar bloqueos CORS en el navegador.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            gold_res  = await client.get("https://api.binance.com/api/v3/ticker/price?symbol=XAUUSDT")
+            dolar_res = await client.get("https://api.bluelytics.com.ar/v2/latest")
+
+        gold_data  = gold_res.json()
+        dolar_data = dolar_res.json()
+
+        gold_usd  = float(gold_data["price"]) if "price" in gold_data else None
+        blue      = dolar_data.get("blue", {}).get("value_sell")
+        oficial   = dolar_data.get("oficial", {}).get("value_sell")
+
+        return {
+            "goldUSD":      gold_usd,
+            "dolarBlue":    blue,
+            "dolarOficial": oficial,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"No se pudo obtener precios: {e}")
 
 # ─── Seed ─────────────────────────────────────────────────────────────────────
 def seed_products(db: Session):
