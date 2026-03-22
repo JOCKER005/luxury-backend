@@ -387,13 +387,13 @@ async def get_market_prices():
     """
     try:
         async with httpx.AsyncClient(timeout=8) as client:
-            gold_res  = await client.get("https://api.binance.com/api/v3/ticker/price?symbol=XAUUSDT")
+            gold_res = await client.get("https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD")
             dolar_res = await client.get("https://api.bluelytics.com.ar/v2/latest")
 
         gold_data  = gold_res.json()
         dolar_data = dolar_res.json()
 
-        gold_usd  = float(gold_data["price"]) if "price" in gold_data else None
+        gold_usd = float(gold_data[0]["spreadProfilePrices"][0]["ask"]) if gold_data else None
         blue      = dolar_data.get("blue", {}).get("value_sell")
         oficial   = dolar_data.get("oficial", {}).get("value_sell")
 
