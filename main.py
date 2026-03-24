@@ -233,7 +233,10 @@ def admin_list_products(db: Session = Depends(get_db), _=Depends(verify_admin)):
 
 @app.post("/api/admin/products", response_model=ProductOut)
 def create_product(body: ProductCreate, db: Session = Depends(get_db), _=Depends(verify_admin)):
-    p = Product(**body.model_dump())
+    data = body.model_dump()
+    # Serializar images list a JSON string para guardar en DB
+    data["images"] = json.dumps(data.get("images") or [])
+    p = Product(**data)
     db.add(p); db.commit(); db.refresh(p)
     return p
 
@@ -243,7 +246,11 @@ def update_product(product_id: int, body: ProductUpdate,
                    db: Session = Depends(get_db), _=Depends(verify_admin)):
     p = db.query(Product).filter(Product.id == product_id).first()
     if not p: raise HTTPException(404, detail="Producto no encontrado")
-    for field, val in body.model_dump(exclude_unset=True).items():
+    data = body.model_dump(exclude_unset=True)
+    # Serializar images list a JSON string si viene en el body
+    if "images" in data:
+        data["images"] = json.dumps(data["images"] or [])
+    for field, val in data.items():
         setattr(p, field, val)
     db.commit(); db.refresh(p)
     return p
@@ -387,13 +394,13 @@ async def get_market_prices():
     """
     try:
         async with httpx.AsyncClient(timeout=8) as client:
-            gold_res = await client.get("https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD")
+            gold_res  = await client.get("https://api.binance.com/api/v3/ticker/price?symbol=XAUUSDT")
             dolar_res = await client.get("https://api.bluelytics.com.ar/v2/latest")
 
         gold_data  = gold_res.json()
         dolar_data = dolar_res.json()
 
-        gold_usd = float(gold_data[0]["spreadProfilePrices"][0]["ask"]) if gold_data else None
+        gold_usd  = float(gold_data["price"]) if "price" in gold_data else None
         blue      = dolar_data.get("blue", {}).get("value_sell")
         oficial   = dolar_data.get("oficial", {}).get("value_sell")
 

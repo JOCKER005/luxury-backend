@@ -1,4 +1,5 @@
-from pydantic import BaseModel, field_validator  # FIX: model_validator no se usa, eliminado
+import json
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from datetime import datetime
 
@@ -10,13 +11,14 @@ class ProductBase(BaseModel):
     name:        str
     category:    str
     price:       float
-    stock:       Optional[int]   = 0
-    featured:    Optional[bool]  = False
-    active:      Optional[bool]  = True
-    rating:      Optional[float] = 5.0
-    reviews:     Optional[int]   = 0
-    description: Optional[str]   = ""
-    image:       Optional[str]   = ""
+    stock:       Optional[int]       = 0
+    featured:    Optional[bool]      = False
+    active:      Optional[bool]      = True
+    rating:      Optional[float]     = 5.0
+    reviews:     Optional[int]       = 0
+    description: Optional[str]       = ""
+    image:       Optional[str]       = ""
+    images:      Optional[List[str]] = []   # Lista de URLs adicionales
 
     @field_validator("price")
     @classmethod
@@ -53,22 +55,31 @@ class ProductBase(BaseModel):
             raise ValueError("El rating debe estar entre 1 y 5")
         return v
 
+    @field_validator("images")
+    @classmethod
+    def images_must_be_urls(cls, v):
+        if v is None:
+            return []
+        # Máximo 10 imágenes adicionales
+        return v[:10]
+
 
 class ProductCreate(ProductBase):
     pass
 
 
 class ProductUpdate(BaseModel):
-    name:        Optional[str]   = None
-    category:    Optional[str]   = None
-    price:       Optional[float] = None
-    stock:       Optional[int]   = None
-    featured:    Optional[bool]  = None
-    active:      Optional[bool]  = None
-    rating:      Optional[float] = None
-    reviews:     Optional[int]   = None
-    description: Optional[str]   = None
-    image:       Optional[str]   = None
+    name:        Optional[str]       = None
+    category:    Optional[str]       = None
+    price:       Optional[float]     = None
+    stock:       Optional[int]       = None
+    featured:    Optional[bool]      = None
+    active:      Optional[bool]      = None
+    rating:      Optional[float]     = None
+    reviews:     Optional[int]       = None
+    description: Optional[str]       = None
+    image:       Optional[str]       = None
+    images:      Optional[List[str]] = None
 
     @field_validator("price")
     @classmethod
@@ -98,13 +109,41 @@ class ProductUpdate(BaseModel):
             raise ValueError("El rating debe estar entre 1 y 5")
         return v
 
+    @field_validator("images")
+    @classmethod
+    def images_limit(cls, v):
+        if v is not None:
+            return v[:10]
+        return v
 
-class ProductOut(ProductBase):
-    id:         int
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+
+class ProductOut(BaseModel):
+    id:          int
+    name:        str
+    category:    str
+    price:       float
+    stock:       int
+    featured:    bool
+    active:      bool
+    rating:      float
+    reviews:     int
+    description: str
+    image:       str
+    images:      List[str] = []
+    created_at:  Optional[datetime] = None
+    updated_at:  Optional[datetime] = None
 
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def model_validate(cls, obj, **kwargs):
+        # Deserializar 'images' desde JSON string si viene de SQLAlchemy
+        if hasattr(obj, "images") and isinstance(obj.images, str):
+            try:
+                obj.images = json.loads(obj.images)
+            except Exception:
+                obj.images = []
+        return super().model_validate(obj, **kwargs)
 
 
 # ─── Orders ───────────────────────────────────────────────────────────────────

@@ -5,11 +5,6 @@ from datetime import datetime, timezone
 
 
 def utcnow():
-    """
-    FIX: datetime.utcnow() está deprecado en Python 3.12+ y genera DeprecationWarning.
-    Usar datetime.now(timezone.utc) es la forma correcta en Python 3.11+.
-    SQLAlchemy acepta un callable como default, por eso se pasa la función, no el resultado.
-    """
     return datetime.now(timezone.utc)
 
 
@@ -27,6 +22,9 @@ class Product(Base):
     reviews     = Column(Integer, default=0)
     description = Column(Text, default="")
     image       = Column(String(500), default="")
+    # Campo nuevo: JSON con lista de URLs adicionales de imágenes
+    # Se guarda como texto JSON: '["url1","url2","url3"]'
+    images      = Column(Text, default="[]")
     created_at  = Column(DateTime(timezone=True), default=utcnow)
     updated_at  = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
