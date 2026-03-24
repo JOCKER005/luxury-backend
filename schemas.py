@@ -137,17 +137,26 @@ class ProductOut(BaseModel):
 
     @classmethod
     def model_validate(cls, obj, **kwargs):
-        # Convertimos el objeto SQLAlchemy a dict seguro
-        data = obj.__dict__.copy()
+        # Si es un dict puro (ej: ya fue serializado), lo usamos directamente
+        if isinstance(obj, dict):
+            data = obj.copy()
+        else:
+            # Objeto SQLAlchemy: copiamos __dict__ y eliminamos la clave interna de SA
+            data = {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
 
         images = data.get("images")
 
-        if isinstance(images, str):
+        if isinstance(images, list):
+            # Ya es lista válida, la dejamos como está
+            data["images"] = images
+        elif isinstance(images, str):
             try:
-                data["images"] = json.loads(images)
+                parsed = json.loads(images)
+                data["images"] = parsed if isinstance(parsed, list) else []
             except Exception:
                 data["images"] = []
-        elif images is None:
+        else:
+            # None, int, u otro tipo inesperado
             data["images"] = []
 
         return super().model_validate(data, **kwargs)

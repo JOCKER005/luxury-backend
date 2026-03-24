@@ -84,11 +84,30 @@ ALLOWED_ORIGINS = [o.strip() for o in _raw.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,  # o ["*"] para debug
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ─── Global error handler: garantiza headers CORS incluso en errores 500 ──────
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware as _CORS
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    origin = request.headers.get("origin", "")
+    headers = {}
+    if origin in ALLOWED_ORIGINS or "*" in ALLOWED_ORIGINS:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+    import traceback
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Error interno: {type(exc).__name__}: {exc}"},
+        headers=headers,
+    )
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "luxe-admin-secret-2024")
@@ -116,14 +135,15 @@ def list_products(featured: Optional[bool] = None, category: Optional[str] = Non
     q = db.query(Product).filter(Product.active == True)
     if featured is not None: q = q.filter(Product.featured == featured)
     if category:             q = q.filter(Product.category == category)
-    return q.all()
+    products = q.all()
+    return [ProductOut.model_validate(p) for p in products]
 
 
 @app.get("/api/products/{product_id}", response_model=ProductOut)
 def get_product(product_id: int, db: Session = Depends(get_db)):
     p = db.query(Product).filter(Product.id == product_id, Product.active == True).first()
     if not p: raise HTTPException(404, detail="Producto no encontrado")
-    return p
+    return ProductOut.model_validate(p)
 
 # ─── Public: Payments ─────────────────────────────────────────────────────────
 @app.post("/api/payments/create-preference", response_model=PaymentPreferenceResponse)
@@ -248,7 +268,8 @@ async def mp_webhook(request: Request, db: Session = Depends(get_db)):
 # ─── Admin: Products ──────────────────────────────────────────────────────────
 @app.get("/api/admin/products", response_model=list[ProductOut])
 def admin_list_products(db: Session = Depends(get_db), _=Depends(verify_admin)):
-    return db.query(Product).order_by(Product.id.desc()).all()
+    products = db.query(Product).order_by(Product.id.desc()).all()
+    return [ProductOut.model_validate(p) for p in products]
 
 
 @app.post("/api/admin/products", response_model=ProductOut)
@@ -258,7 +279,7 @@ def create_product(body: ProductCreate, db: Session = Depends(get_db), _=Depends
     data["images"] = json.dumps(data.get("images") or [])
     p = Product(**data)
     db.add(p); db.commit(); db.refresh(p)
-    return p
+    return ProductOut.model_validate(p)
 
 
 @app.patch("/api/admin/products/{product_id}", response_model=ProductOut)
@@ -273,7 +294,7 @@ def update_product(product_id: int, body: ProductUpdate,
     for field, val in data.items():
         setattr(p, field, val)
     db.commit(); db.refresh(p)
-    return p
+    return ProductOut.model_validate(p)
 
 
 @app.delete("/api/admin/products/{product_id}")
@@ -437,21 +458,27 @@ def seed_products(db: Session):
     db.add_all([
         Product(name="Anillo Eternity Diamantes",  category="anillos",  price=45000, stock=5,  featured=True,  active=True, rating=4.9, reviews=127,
                 description="Anillo de eternidad con diamantes engastados en oro blanco 18k.",
-                image="https://images.unsplash.com/photo-1605100804763-247f67b2548e?auto=format&fit=crop&w=600&q=80"),
+                image="https://images.unsplash.com/photo-1605100804763-247f67b2548e?auto=format&fit=crop&w=600&q=80",
+                images="[]"),
         Product(name="Collar Cadena Veneciana Oro", category="collares", price=28000, stock=8,  featured=True,  active=True, rating=4.8, reviews=89,
                 description="Collar de cadena veneciana en oro amarillo 18k.",
-                image="https://images.unsplash.com/photo-1611591437281-460bfbe1220a?auto=format&fit=crop&w=600&q=80"),
+                image="https://images.unsplash.com/photo-1611591437281-460bfbe1220a?auto=format&fit=crop&w=600&q=80",
+                images="[]"),
         Product(name="Aretes Gota Zafiro Azul",    category="aretes",   price=32000, stock=4,  featured=True,  active=True, rating=4.9, reviews=54,
                 description="Aretes de gota con zafiros azules naturales rodeados de diamantes.",
-                image="https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?auto=format&fit=crop&w=600&q=80"),
+                image="https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?auto=format&fit=crop&w=600&q=80",
+                images="[]"),
         Product(name="Pulsera Tennis Diamantes",   category="pulseras", price=62000, stock=3,  featured=True,  active=True, rating=5.0, reviews=38,
                 description="Pulsera tennis con diamantes de 0.05ct en oro blanco 18k.",
-                image="https://images.unsplash.com/photo-1573408301185-9519f94816ec?auto=format&fit=crop&w=600&q=80"),
+                image="https://images.unsplash.com/photo-1573408301185-9519f94816ec?auto=format&fit=crop&w=600&q=80",
+                images="[]"),
         Product(name="Anillo Solitario Brillante", category="anillos",  price=89000, stock=2,  featured=False, active=True, rating=5.0, reviews=21,
                 description="Anillo solitario con diamante central de 0.5ct en oro rosado 18k.",
-                image="https://images.unsplash.com/photo-1518131672697-613becd4fab5?auto=format&fit=crop&w=600&q=80"),
+                image="https://images.unsplash.com/photo-1518131672697-613becd4fab5?auto=format&fit=crop&w=600&q=80",
+                images="[]"),
         Product(name="Collar Perlas Cultivadas",   category="collares", price=19500, stock=10, featured=False, active=True, rating=4.7, reviews=63,
                 description="Collar de perlas de agua dulce cultivadas, cierre en plata 925.",
-                image="https://images.unsplash.com/photo-1599643477874-c4ea90b50369?auto=format&fit=crop&w=600&q=80"),
+                image="https://images.unsplash.com/photo-1599643477874-c4ea90b50369?auto=format&fit=crop&w=600&q=80",
+                images="[]"),
     ])
     db.commit()
