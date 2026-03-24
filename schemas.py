@@ -137,19 +137,20 @@ class ProductOut(BaseModel):
 
     @classmethod
     def model_validate(cls, obj, **kwargs):
-        if hasattr(obj, "images"):
-            # Caso 1: viene como string (JSON)
-            if isinstance(obj.images, str):
-                try:
-                    obj.images = json.loads(obj.images)
-                except Exception:
-                    obj.images = []
-    
-            # Caso 2: viene como NULL de la DB
-            if obj.images is None:
-                obj.images = []
-    
-        return super().model_validate(obj, **kwargs)
+        # Convertimos el objeto SQLAlchemy a dict seguro
+        data = obj.__dict__.copy()
+
+        images = data.get("images")
+
+        if isinstance(images, str):
+            try:
+                data["images"] = json.loads(images)
+            except Exception:
+                data["images"] = []
+        elif images is None:
+            data["images"] = []
+
+        return super().model_validate(data, **kwargs)
 
 
 # ─── Orders ───────────────────────────────────────────────────────────────────

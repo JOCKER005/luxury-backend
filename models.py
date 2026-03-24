@@ -24,7 +24,7 @@ class Product(Base):
     image       = Column(String(500), default="")
     # Campo nuevo: JSON con lista de URLs adicionales de imágenes
     # Se guarda como texto JSON: '["url1","url2","url3"]'
-    images      = Column(Text, default="[]")
+    images = Column(Text, nullable=False, default="[]")
     created_at  = Column(DateTime(timezone=True), default=utcnow)
     updated_at  = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
