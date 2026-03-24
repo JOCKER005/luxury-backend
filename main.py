@@ -47,6 +47,23 @@ def clear_attempts(ip: str): _failed.pop(ip, None)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+
+    # MIGRACIÓN: agregar columna 'images' si no existe (compatible SQLite y PostgreSQL)
+    try:
+        from sqlalchemy import text, inspect
+        with engine.connect() as conn:
+            inspector = inspect(engine)
+            cols = [c["name"] for c in inspector.get_columns("products")]
+            if "images" not in cols:
+                if IS_POSTGRES:
+                    conn.execute(text("ALTER TABLE products ADD COLUMN images TEXT DEFAULT '[]'"))
+                else:
+                    conn.execute(text("ALTER TABLE products ADD COLUMN images TEXT DEFAULT '[]'"))
+                conn.commit()
+                print("[INFO] Columna 'images' agregada a products.")
+    except Exception as e:
+        print(f"[WARN] Migración images falló (puede que ya exista): {e}")
+
     try:
         db = next(get_db())
         if db.query(Product).count() == 0:
