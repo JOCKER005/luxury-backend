@@ -135,15 +135,14 @@ def list_products(featured: Optional[bool] = None, category: Optional[str] = Non
     q = db.query(Product).filter(Product.active == True)
     if featured is not None: q = q.filter(Product.featured == featured)
     if category:             q = q.filter(Product.category == category)
-    products = q.all()
-    return [ProductOut.model_validate(p) for p in products]
+    return q.all()
 
 
 @app.get("/api/products/{product_id}", response_model=ProductOut)
 def get_product(product_id: int, db: Session = Depends(get_db)):
     p = db.query(Product).filter(Product.id == product_id, Product.active == True).first()
     if not p: raise HTTPException(404, detail="Producto no encontrado")
-    return ProductOut.model_validate(p)
+    return p
 
 # ─── Public: Payments ─────────────────────────────────────────────────────────
 @app.post("/api/payments/create-preference", response_model=PaymentPreferenceResponse)
@@ -268,18 +267,16 @@ async def mp_webhook(request: Request, db: Session = Depends(get_db)):
 # ─── Admin: Products ──────────────────────────────────────────────────────────
 @app.get("/api/admin/products", response_model=list[ProductOut])
 def admin_list_products(db: Session = Depends(get_db), _=Depends(verify_admin)):
-    products = db.query(Product).order_by(Product.id.desc()).all()
-    return [ProductOut.model_validate(p) for p in products]
+    return db.query(Product).order_by(Product.id.desc()).all()
 
 
 @app.post("/api/admin/products", response_model=ProductOut)
 def create_product(body: ProductCreate, db: Session = Depends(get_db), _=Depends(verify_admin)):
     data = body.model_dump()
-    # Serializar images list a JSON string para guardar en DB
     data["images"] = json.dumps(data.get("images") or [])
     p = Product(**data)
     db.add(p); db.commit(); db.refresh(p)
-    return ProductOut.model_validate(p)
+    return p
 
 
 @app.patch("/api/admin/products/{product_id}", response_model=ProductOut)
@@ -288,13 +285,12 @@ def update_product(product_id: int, body: ProductUpdate,
     p = db.query(Product).filter(Product.id == product_id).first()
     if not p: raise HTTPException(404, detail="Producto no encontrado")
     data = body.model_dump(exclude_unset=True)
-    # Serializar images list a JSON string si viene en el body
     if "images" in data:
         data["images"] = json.dumps(data["images"] or [])
     for field, val in data.items():
         setattr(p, field, val)
     db.commit(); db.refresh(p)
-    return ProductOut.model_validate(p)
+    return p
 
 
 @app.delete("/api/admin/products/{product_id}")

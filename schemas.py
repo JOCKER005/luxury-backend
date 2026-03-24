@@ -135,31 +135,19 @@ class ProductOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
+    @field_validator("images", mode="before")
     @classmethod
-    def model_validate(cls, obj, **kwargs):
-        # Si es un dict puro (ej: ya fue serializado), lo usamos directamente
-        if isinstance(obj, dict):
-            data = obj.copy()
-        else:
-            # Objeto SQLAlchemy: copiamos __dict__ y eliminamos la clave interna de SA
-            data = {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
-
-        images = data.get("images")
-
-        if isinstance(images, list):
-            # Ya es lista válida, la dejamos como está
-            data["images"] = images
-        elif isinstance(images, str):
+    def parse_images(cls, v):
+        """Convierte el string JSON almacenado en DB a lista Python."""
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
             try:
-                parsed = json.loads(images)
-                data["images"] = parsed if isinstance(parsed, list) else []
+                parsed = json.loads(v)
+                return parsed if isinstance(parsed, list) else []
             except Exception:
-                data["images"] = []
-        else:
-            # None, int, u otro tipo inesperado
-            data["images"] = []
-
-        return super().model_validate(data, **kwargs)
+                return []
+        return []
 
 
 # ─── Orders ───────────────────────────────────────────────────────────────────
