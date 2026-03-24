@@ -59,12 +59,15 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Luxe Joyería API", version="1.0.0", lifespan=lifespan)
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
-_raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:4173")
+_raw = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:5173,http://localhost:4173,https://luxury-front-five.vercel.app"
+)
 ALLOWED_ORIGINS = [o.strip() for o in _raw.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=ALLOWED_ORIGINS,  # o ["*"] para debug
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
