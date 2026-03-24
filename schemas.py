@@ -137,12 +137,18 @@ class ProductOut(BaseModel):
 
     @classmethod
     def model_validate(cls, obj, **kwargs):
-        # Deserializar 'images' desde JSON string si viene de SQLAlchemy
-        if hasattr(obj, "images") and isinstance(obj.images, str):
-            try:
-                obj.images = json.loads(obj.images)
-            except Exception:
+        if hasattr(obj, "images"):
+            # Caso 1: viene como string (JSON)
+            if isinstance(obj.images, str):
+                try:
+                    obj.images = json.loads(obj.images)
+                except Exception:
+                    obj.images = []
+    
+            # Caso 2: viene como NULL de la DB
+            if obj.images is None:
                 obj.images = []
+    
         return super().model_validate(obj, **kwargs)
 
 
