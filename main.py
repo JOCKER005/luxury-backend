@@ -426,12 +426,12 @@ def export_libro_diario(date_from: Optional[str] = None, date_to: Optional[str] 
 @app.get("/api/market/prices")
 async def get_market_prices():
     """
-    Consulta precio del oro desde Binance (XAUUSDT) y dólar desde bluelytics.
+    Consulta precio del oro desde forex (XAUUSDT) y dólar desde bluelytics.
     Se hace desde el backend para evitar bloqueos CORS en el navegador.
     """
     try:
         async with httpx.AsyncClient(timeout=8) as client:
-            gold_res  = await client.get("https://api.binance.com/api/v3/ticker/price?symbol=XAUUSDT")
+            gold_res  = await client.get("https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD")
             dolar_res = await client.get("https://api.bluelytics.com.ar/v2/latest")
 
         gold_data  = gold_res.json()
