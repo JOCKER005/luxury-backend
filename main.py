@@ -437,7 +437,12 @@ async def get_market_prices():
         gold_data  = gold_res.json()
         dolar_data = dolar_res.json()
 
-        gold_usd  = float(gold_data["price"]) if "price" in gold_data else None
+        # La API de Swissquote devuelve una lista de objetos con spreadProfilePrices
+        try:
+            gold_usd = float(gold_data[0]["spreadProfilePrices"][0]["ask"])
+        except (IndexError, KeyError, TypeError, ValueError):
+            gold_usd = None
+
         blue      = dolar_data.get("blue", {}).get("value_sell")
         oficial   = dolar_data.get("oficial", {}).get("value_sell")
 
