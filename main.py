@@ -402,7 +402,23 @@ def update_order_status(order_id: int, body: dict,
                         db: Session = Depends(get_db), _=Depends(verify_admin)):
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order: raise HTTPException(404, detail="Orden no encontrada")
-    order.status = body.get("status", order.status); db.commit()
+
+    new_status  = body.get("status", order.status)
+    prev_status = order.status
+
+    order.status = new_status
+    db.commit()
+
+    # Si se aprueba manualmente y no estaba aprobada antes → descontar stock
+    if new_status == "approved" and prev_status != "approved":
+        print(f"[INFO] Orden {order_id} aprobada manualmente — descontando stock")
+        for item in db.query(OrderItem).filter(OrderItem.order_id == order_id).all():
+            p = lock_row(db.query(Product).filter(Product.id == item.product_id)).first()
+            if p and p.stock is not None:
+                p.stock = max(0, p.stock - item.quantity)
+                print(f"[INFO] Stock {p.name}: -{item.quantity} = {p.stock}")
+        db.commit()
+
     return {"ok": True}
 
 # ─── Admin: Excel ─────────────────────────────────────────────────────────────
