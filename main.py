@@ -61,6 +61,34 @@ async def lifespan(app: FastAPI):
                     conn.execute(text("ALTER TABLE products ADD COLUMN images TEXT DEFAULT '[]'"))
                 conn.commit()
                 print("[INFO] Columna 'images' agregada a products.")
+
+        # Migración: columnas de comprador en orders
+        with engine.connect() as conn:
+            inspector2 = inspect(engine)
+            order_cols = [c["name"] for c in inspector2.get_columns("orders")]
+            new_cols = {
+                "payer_name":  "VARCHAR(200)",
+                "payer_email": "VARCHAR(200)",
+                "payer_dni":   "VARCHAR(50)",
+                "payer_phone": "VARCHAR(50)",
+            }
+            new_cols = {
+                "payer_name":       "VARCHAR(200)",
+                "payer_email":      "VARCHAR(200)",
+                "payer_dni":        "VARCHAR(50)",
+                "payer_phone":      "VARCHAR(50)",
+                "shipping_name":    "VARCHAR(200)",
+                "shipping_dni":     "VARCHAR(50)",
+                "shipping_phone":   "VARCHAR(50)",
+                "shipping_address": "VARCHAR(500)",
+                "shipping_zip":     "VARCHAR(20)",
+                "shipping_notes":   "TEXT",
+            }
+            for col_name, col_type in new_cols.items():
+                if col_name not in order_cols:
+                    conn.execute(text(f"ALTER TABLE orders ADD COLUMN {col_name} {col_type}"))
+                    print(f"[INFO] Columna '{col_name}' agregada a orders.")
+            conn.commit()
     except Exception as e:
         print(f"[WARN] Migración images falló (puede que ya exista): {e}")
 
@@ -191,8 +219,19 @@ def create_preference(body: PaymentPreferenceRequest, db: Session = Depends(get_
     if result["status"] not in (200, 201):
         raise HTTPException(500, detail=str(pref))
 
-    order = Order(mp_preference_id=pref["id"], status="pending",
-                  total=total_real, created_at=datetime.now(timezone.utc))
+    sd = body.shippingData
+    order = Order(
+        mp_preference_id = pref["id"],
+        status           = "pending",
+        total            = total_real,
+        created_at       = datetime.now(timezone.utc),
+        shipping_name    = sd.name,
+        shipping_dni     = sd.dni,
+        shipping_phone   = sd.phone,
+        shipping_address = sd.address,
+        shipping_zip     = sd.zip,
+        shipping_notes   = sd.notes or "",
+    )
     db.add(order)
     db.flush()
 
@@ -236,31 +275,73 @@ async def mp_webhook(request: Request, db: Session = Depends(get_db)):
     except Exception:
         raise HTTPException(400, detail="Body inválido")
 
-    if body.get("type") == "payment":
-        payment_id = body.get("data", {}).get("id")
-        if payment_id:
-            result  = get_mp_sdk().payment().get(payment_id)
-            payment = result["response"]
-            pref_id, status = payment.get("preference_id"), payment.get("status")
-
-            order = db.query(Order).filter(Order.mp_preference_id == pref_id).first()
-            if not order:
-                print(f"[WARN] Webhook sin orden para preference_id={pref_id}")
-                return {"ok": True, "msg": "order_not_found"}
-
-            if order.mp_payment_id == str(payment_id) and order.status == "approved":
-                return {"ok": True, "msg": "already_processed"}
-
-            order.status       = status
-            order.mp_payment_id = str(payment_id)
+    # ── Helper: procesar un pago por ID ──────────────────────────────────────
+    def process_payment(payment_id):
+        result  = get_mp_sdk().payment().get(payment_id)
+        payment = result["response"]
+        pref_id = payment.get("preference_id")
+        status  = payment.get("status")
+        if not pref_id:
+            print(f"[WARN] Pago {payment_id} sin preference_id")
+            return
+        order = db.query(Order).filter(Order.mp_preference_id == pref_id).first()
+        if not order:
+            print(f"[WARN] No hay orden para preference_id={pref_id}")
+            return
+        if order.mp_payment_id == str(payment_id) and order.status == "approved":
+            print(f"[INFO] Orden {order.id} ya procesada")
+            return
+        order.status        = status
+        order.mp_payment_id = str(payment_id)
+        # Datos del comprador
+        payer = payment.get("payer", {})
+        fname = payer.get("first_name", "") or ""
+        lname = payer.get("last_name",  "") or ""
+        full_name = f"{fname} {lname}".strip()
+        if full_name:           order.payer_name  = full_name
+        if payer.get("email"):  order.payer_email = payer["email"]
+        ident = payer.get("identification", {})
+        if ident.get("number"): order.payer_dni   = str(ident["number"])
+        phone_data = payer.get("phone", {})
+        if phone_data.get("number"): order.payer_phone = str(phone_data["number"])
+        db.commit()
+        # Descontar stock
+        if status == "approved":
+            print(f"[INFO] Orden {order.id} APROBADA — descontando stock")
+            for item in db.query(OrderItem).filter(OrderItem.order_id == order.id).all():
+                p = lock_row(db.query(Product).filter(Product.id == item.product_id)).first()
+                if p and p.stock is not None:
+                    p.stock = max(0, p.stock - item.quantity)
+                    print(f"[INFO] Stock {p.name}: -{item.quantity} = {p.stock}")
             db.commit()
 
-            if status == "approved":
-                for item in db.query(OrderItem).filter(OrderItem.order_id == order.id).all():
-                    p = lock_row(db.query(Product).filter(Product.id == item.product_id)).first()
-                    if p and p.stock is not None:
-                        p.stock = max(0, p.stock - item.quantity)
-                db.commit()
+    notif_type = body.get("type", "")
+    print(f"[WEBHOOK] type={notif_type} data={body.get('data')}")
+
+    if notif_type == "payment":
+        pid = body.get("data", {}).get("id")
+        if pid:
+            process_payment(pid)
+
+    elif "merchant_order" in notif_type or notif_type == "topic_merchant_order_wh":
+        try:
+            resource = body.get("resource") or str(body.get("data", {}).get("id", ""))
+            mo_id    = resource.split("/")[-1]
+            mo_res   = get_mp_sdk().merchant_order().get(mo_id)
+            mo       = mo_res["response"]
+            for p in mo.get("payments", []):
+                if p.get("status") == "approved":
+                    process_payment(p["id"])
+        except Exception as e:
+            print(f"[WARN] merchant_order error: {e}")
+
+    else:
+        pid = body.get("data", {}).get("id")
+        if pid:
+            try:
+                process_payment(pid)
+            except Exception as e:
+                print(f"[WARN] fallback webhook error: {e}")
 
     return {"ok": True}
 

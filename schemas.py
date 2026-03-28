@@ -170,6 +170,18 @@ class OrderOut(BaseModel):
     total:            float
     created_at:       Optional[datetime]
     items:            List[OrderItemOut] = []
+    # Datos del comprador (desde MP webhook)
+    payer_name:       Optional[str] = None
+    payer_email:      Optional[str] = None
+    payer_dni:        Optional[str] = None
+    payer_phone:      Optional[str] = None
+    # Datos de envío (desde el checkout)
+    shipping_name:    Optional[str] = None
+    shipping_dni:     Optional[str] = None
+    shipping_phone:   Optional[str] = None
+    shipping_address: Optional[str] = None
+    shipping_zip:     Optional[str] = None
+    shipping_notes:   Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -211,9 +223,54 @@ class BackUrls(BaseModel):
         return v
 
 
+class ShippingData(BaseModel):
+    name:    str
+    dni:     str
+    phone:   str
+    address: str
+    zip:     str
+    notes:   Optional[str] = ""
+
+    @field_validator("name")
+    @classmethod
+    def name_required(cls, v):
+        if not v or not v.strip():
+            raise ValueError("El nombre es requerido")
+        return v.strip()
+
+    @field_validator("dni")
+    @classmethod
+    def dni_required(cls, v):
+        if not v or not v.strip():
+            raise ValueError("El DNI es requerido")
+        return v.strip()
+
+    @field_validator("phone")
+    @classmethod
+    def phone_required(cls, v):
+        if not v or not v.strip():
+            raise ValueError("El teléfono es requerido")
+        return v.strip()
+
+    @field_validator("address")
+    @classmethod
+    def address_required(cls, v):
+        if not v or not v.strip():
+            raise ValueError("La dirección es requerida")
+        return v.strip()
+
+    @field_validator("zip")
+    @classmethod
+    def zip_required(cls, v):
+        if not v or not v.strip():
+            raise ValueError("El código postal es requerido")
+        return v.strip()
+
+
 class PaymentPreferenceRequest(BaseModel):
-    items:    List[PaymentItem]
-    backUrls: BackUrls
+    items:        List[PaymentItem]
+    backUrls:     BackUrls
+    shippingData: ShippingData
 
     @field_validator("items")
     @classmethod

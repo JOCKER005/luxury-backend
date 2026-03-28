@@ -39,6 +39,18 @@ class Order(Base):
     mp_payment_id     = Column(String(200), nullable=True)
     status            = Column(String(50), default="pending")
     total             = Column(Float, default=0)
+    # Datos del comprador — desde MP webhook
+    payer_name        = Column(String(200), nullable=True)
+    payer_email       = Column(String(200), nullable=True)
+    payer_dni         = Column(String(50),  nullable=True)
+    payer_phone       = Column(String(50),  nullable=True)
+    # Datos de envío — ingresados por el cliente en el checkout
+    shipping_name     = Column(String(200), nullable=True)
+    shipping_dni      = Column(String(50),  nullable=True)
+    shipping_phone    = Column(String(50),  nullable=True)
+    shipping_address  = Column(String(500), nullable=True)
+    shipping_zip      = Column(String(20),  nullable=True)
+    shipping_notes    = Column(Text,        nullable=True)
     created_at        = Column(DateTime(timezone=True), default=utcnow)
     updated_at        = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
